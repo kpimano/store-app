@@ -5,11 +5,13 @@ const WC_API = process.env.WC_API_URL;
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }  // ← Promise now
 ) {
   try {
+    const { id } = await params;  // ← must await params
+
     const res = await fetch(
-      `${WC_API}/products/${params.id}`,
+      `${WC_API}/products/${id}`,
       { headers: wcHeaders }
     );
 
@@ -59,8 +61,14 @@ export async function GET(
 function extractMetaFields(metaData: any[]) {
   if (!metaData) return {};
   const result: Record<string, any> = {};
-  const keys = ['affiliate_url','country_target','is_trending',
-                 'is_new_arrival','like_count','short_tagline'];
+  const keys = [
+    'affiliate_url',
+    'country_target',
+    'is_trending',
+    'is_new_arrival',
+    'like_count',
+    'short_tagline',
+  ];
   metaData.forEach((m: any) => {
     if (keys.includes(m.key)) result[m.key] = m.value;
   });
