@@ -1,77 +1,127 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { wcHeaders } from '@/lib/wc-auth';
 
-const WP_API = process.env.WP_API_URL;
-const TOKEN  = process.env.WP_JWT_TOKEN;
-
-const headers = {
-  'Authorization': `Bearer ${TOKEN}`,
-  'Content-Type': 'application/json',
-};
+const WC_API = process.env.WC_API_URL;
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
 
-    // Pass through any filter params from frontend
-    const filter   = searchParams.get('filter');   // trending, featured, top_selling, new_arrival
-    const category = searchParams.get('category'); // category id
+    const filter   = searchParams.get('filter');
+    const category = searchParams.get('category');
     const perPage  = searchParams.get('per_page') || '20';
+    const page     = searchParams.get('page')     || '1';
 
-    let wpUrl = `${WP_API}/product?acf_format=standard&per_page=${perPage}`;
+    // Build WooCommerce query URL
+    const params = new URLSearchParams({
+      per_page: perPage,
+      page:     page,
+      status:   'publish',
+    });
 
-    // Apply filters
-    if (filter === 'trending')    wpUrl += `&meta_key=is_trending&meta_value=1`;
-    if (filter === 'featured')    wpUrl += `&meta_key=is_featured&meta_value=1`;
-    if (filter === 'top_selling') wpUrl += `&meta_key=is_top_selling&meta_value=1`;
-    if (filter === 'new_arrival') wpUrl += `&meta_key=is_new_arrival&meta_value=1&orderby=date&order=desc`;
-    if (category)                 wpUrl += `&product_category=${category}`;
+    // Apply filters using WC native params
+    if (filter === 'featured')    params.set('featured', 'true');
+    if (filter === 'on_sale')     params.set('on_sale',  'true');
+    if (filter === 'new_arrival') {
+      params.set('orderby', 'date');
+      params.set('order',   'desc');
+    }
+    if (filter === 'top_selling') {
+      params.set('orderby', 'popularity');
+      params.set('order',   'desc');
+    }
+    if (filter === 'trending') {
+      // trending uses ACF meta field
+      params.set('meta_key',   'is_trending');
+      params.set('meta_value', '1');
+    }
+    if (category) params.set('category', category);
 
-    const res = await fetch(wpUrl, { headers });
+    const res = await fetch(
+      `${WC_API}/products?${params.toString()}`,
+      { headers: wcHeaders }
+    );
 
     if (!res.ok) {
+      const err = await res.text();
       return NextResponse.json(
-        { error: 'Failed to fetch products from WordPress' },
+        { error: 'Failed to fetch products', detail: err },
         { status: res.status }
       );
     }
 
     const products = await res.json();
 
-    // Clean and shape the response before sending to frontend
+    // Shape response — clean up raw WC response for frontend
     const cleaned = products.map((p: any) => ({
-      id:            p.id,
-      slug:          p.slug,
-      title:         p.title.rendered,
-      description:   p.content.rendered,
-      excerpt:       p.excerpt.rendered,
-      categories:    p.product_category,
-      store:         p.store,
-      acf: {
-        product_url:      p.acf?.product_url,
-        short_description:p.acf?.short_description,
-        sales_price_inr:  p.acf?.sales_price_inr,
-        sales_price_usd:  p.acf?.sales_price_usd,
-        list_price_inr:   p.acf?.list_price_inr,
-        list_price_usd:   p.acf?.list_price_usd,
-        brand:            p.acf?.brand,
-        store_name:       p.acf?.store_name,
-        end_date:         p.acf?.end_date,
-        product_image:    p.acf?.product_image,
-        country_target:   p.acf?.country_target,
-        is_trending:      p.acf?.is_trending,
-        is_featured:      p.acf?.is_featured,
-        is_top_selling:   p.acf?.is_top_selling,
-        is_new_arrival:   p.acf?.is_new_arrival,
-        like_count:       p.acf?.like_count,
-      }
+      id:                p.id,
+      slug:              p.slug,
+      title:             p.name,
+      description:       p.description,
+      short_description: p.short_description,
+      sku:               p.sku,
+      status:            p.status,
+      featured:          p.featured,
+      on_sale:           p.on_sale,
+      price:             p.price,
+      regular_price:     p.regular_price,
+      sale_price:        p.sale_price,
+      currency:          'INR',
+      categories: p.categories?.map((c: any) => ({
+        id:   c.id,
+        name: c.name,
+        slug: c.slug,
+      })),
+      images: p.images?.map((img: any) => ({
+        id:  img.id,
+        src: img.src,
+        alt: img.alt,
+      })),
+      // ACF extra fields live in meta_data array
+      acf: extractACFFields(p.meta_data),
     }));
 
-    return NextResponse.json(cleaned);
+    // Get total count from WC headers for pagination
+    const total     = res.headers.get('X-WP-Total')     || '0';
+    const totalPages = res.headers.get('X-WP-TotalPages') || '1';
 
-  } catch (error) {
+    return NextResponse.json({
+      products:    cleaned,
+      total:       parseInt(total),
+      total_pages: parseInt(totalPages),
+      page:        parseInt(page),
+      per_page:    parseInt(perPage),
+    });
+
+  } catch (error: any) {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', detail: error.message },
       { status: 500 }
     );
   }
+}
+
+// Helper: extract ACF fields from WC meta_data array
+function extractACFFields(metaData: any[]): Record<string, any> {
+  if (!metaData || !Array.isArray(metaData)) return {};
+
+  const acfKeys = [
+    'affiliate_url',
+    'country_target',
+    'is_trending',
+    'is_new_arrival',
+    'like_count',
+    'short_tagline',
+  ];
+
+  const result: Record<string, any> = {};
+
+  metaData.forEach((meta: any) => {
+    // ACF fields are stored without underscore prefix in meta_data
+    if (acfKeys.includes(meta.key)) {
+      result[meta.key] = meta.value;
+    }
+  });
+
+  return result;
 }

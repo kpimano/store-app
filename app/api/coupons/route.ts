@@ -1,18 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { wcHeaders } from '@/lib/wc-auth';
 
-const WP_API = process.env.WP_API_URL;
-const TOKEN  = process.env.WP_JWT_TOKEN;
-
-const headers = {
-  'Authorization': `Bearer ${TOKEN}`,
-  'Content-Type': 'application/json',
-};
+const WC_API = process.env.WC_API_URL;
 
 export async function GET() {
   try {
     const res = await fetch(
-      `${WP_API}/coupon?acf_format=standard`,
-      { headers }
+      `${WC_API}/coupons?per_page=20`,
+      { headers: wcHeaders }
     );
 
     if (!res.ok) {
@@ -25,24 +20,26 @@ export async function GET() {
     const coupons = await res.json();
 
     const cleaned = coupons.map((c: any) => ({
-      id:    c.id,
-      slug:  c.slug,
-      title: c.title.rendered,
-      acf: {
-        coupon_code:      c.acf?.coupon_code,
-        discount_percent: c.acf?.discount_percent,
-        affiliate_url:    c.acf?.affiliate_url,
-        expiry_date:      c.acf?.expiry_date,
-        country_target:   c.acf?.country_target,
-        coupon_image:     c.acf?.coupon_image,
-      }
+      id:               c.id,
+      code:             c.code,
+      discount_type:    c.discount_type,
+      amount:           c.amount,
+      description:      c.description,
+      date_expires:     c.date_expires,
+      usage_count:      c.usage_count,
+      usage_limit:      c.usage_limit,
+      individual_use:   c.individual_use,
+      minimum_amount:   c.minimum_amount,
+      maximum_amount:   c.maximum_amount,
+      product_ids:      c.product_ids,
+      excluded_product_ids: c.excluded_product_ids,
     }));
 
     return NextResponse.json(cleaned);
 
-  } catch (error) {
+  } catch (error: any) {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', detail: error.message },
       { status: 500 }
     );
   }

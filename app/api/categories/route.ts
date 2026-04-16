@@ -1,40 +1,53 @@
 import { NextResponse } from 'next/server';
+import { wcHeaders } from '@/lib/wc-auth';
 
-const WP_API = process.env.WP_API_URL;
-const TOKEN  = process.env.WP_JWT_TOKEN;
-
-const headers = {
-  'Authorization': `Bearer ${TOKEN}`,
-  'Content-Type': 'application/json',
-};
+const WC_API = process.env.WC_API_URL;
 
 export async function GET() {
   try {
+    // Fetch all categories with per_page=100
     const res = await fetch(
-      `${WP_API}/product_category?acf_format=standard`,
-      { headers }
+      `${WC_API}/products/categories?per_page=100&orderby=count&order=desc`,
+      { headers: wcHeaders }
     );
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: 'Failed to fetch categories' },
+        { status: res.status }
+      );
+    }
 
     const categories = await res.json();
 
-    const cleaned = categories.map((c: any) => ({
-      id:     c.id,
-      name:   c.name,
-      slug:   c.slug,
-      count:  c.count,
-      parent: c.parent,
-      acf: {
-        is_top_category: c.acf?.is_top_category,
-        category_icon:   c.acf?.category_icon,
-        display_order:   c.acf?.display_order,
-      }
-    }));
+    const cleaned = categories
+      .filter((c: any) => c.count > 0) // only categories with products
+      .map((c: any) => ({
+        id:          c.id,
+        name:        c.name,
+        slug:        c.slug,
+        count:       c.count,
+        parent:      c.parent,
+        description: c.description,
+        image:       c.image ? {
+          src: c.image.src,
+          alt: c.image.alt,
+        } : null,
+      }));
 
-    return NextResponse.json(cleaned);
+    // Separate top level vs sub categories
+    const topLevel = cleaned.filter((c: any) => c.parent === 0);
+    const children = cleaned.filter((c: any) => c.parent !== 0);
 
-  } catch (error) {
+    return NextResponse.json({
+      all:       cleaned,
+      top_level: topLevel,
+      children:  children,
+    });
+
+  } catch (error: any) {
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', detail: error.message },
       { status: 500 }
     );
   }
