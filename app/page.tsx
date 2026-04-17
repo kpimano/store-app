@@ -44,7 +44,7 @@ export default async function HomePage() {
         width: '100%'                // Ensure container fills width
       }}>
         <span style={{
-          fontSize: '1rem',          // Increase size
+          fontSize: '1.2rem',          // Increase size
           fontWeight: 'bold'         // Bold text
         }}>
           Kya Chal rha hai, Khana Khaya!! Haha
