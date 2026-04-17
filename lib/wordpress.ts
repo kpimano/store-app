@@ -1,26 +1,22 @@
-const SITE_URL    = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-const WC_API      = process.env.WC_API_URL;
-const WP_API      = process.env.WP_API_URL;
-const WC_KEY      = process.env.WC_CONSUMER_KEY;
-const WC_SECRET   = process.env.WC_CONSUMER_SECRET;
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+const WC_API   = process.env.WC_API_URL;
+const WP_API   = process.env.WP_API_URL;
+const WC_KEY   = process.env.WC_CONSUMER_KEY;
+const WC_SECRET = process.env.WC_CONSUMER_SECRET;
 
-// Detect if running on server side
 const isServer = typeof window === 'undefined';
 
-// WooCommerce auth header
 function getWCAuth() {
   const encoded = Buffer.from(`${WC_KEY}:${WC_SECRET}`).toString('base64');
   return `Basic ${encoded}`;
 }
 
-// ─── Products ────────────────────────────────────────────────
 export async function getProducts(params?: {
   filter?:   'featured' | 'trending' | 'top_selling' | 'new_arrival' | 'on_sale';
   category?: string;
   per_page?: number;
   page?:     number;
 }) {
-  // Server-side: call WordPress directly (no HTTP round-trip)
   if (isServer && WC_API) {
     const query = new URLSearchParams({
       per_page: String(params?.per_page || 20),
@@ -49,7 +45,7 @@ export async function getProducts(params?: {
         'Authorization': getWCAuth(),
         'Content-Type':  'application/json',
       },
-      cache: 'no-store',
+      next: { revalidate: 60 }, // products: refresh every 60 seconds
     });
 
     if (!res.ok) return { products: [], total: 0, total_pages: 1 };
@@ -67,20 +63,18 @@ export async function getProducts(params?: {
     };
   }
 
-  // Client-side: call our own API route
   const query = new URLSearchParams();
-  if (params?.filter)    query.set('filter',    params.filter);
-  if (params?.category)  query.set('category',  params.category);
-  if (params?.per_page)  query.set('per_page',  String(params.per_page));
-  if (params?.page)      query.set('page',      String(params.page));
+  if (params?.filter)   query.set('filter',   params.filter);
+  if (params?.category) query.set('category', params.category);
+  if (params?.per_page) query.set('per_page', String(params.per_page));
+  if (params?.page)     query.set('page',     String(params.page));
 
   const res = await fetch(`${SITE_URL}/api/products?${query}`, {
-    cache: 'no-store',
+    next: { revalidate: 60 },
   });
   return res.json();
 }
 
-// ─── Product shape helper ────────────────────────────────────
 function shapeProduct(p: any) {
   return {
     id:                p.id,
@@ -95,13 +89,13 @@ function shapeProduct(p: any) {
     price:             p.price,
     regular_price:     p.regular_price,
     sale_price:        p.sale_price,
-    categories:        p.categories?.map((c: any) => ({
+    categories: p.categories?.map((c: any) => ({
       id: c.id, name: c.name, slug: c.slug,
     })),
-    images:            p.images?.map((img: any) => ({
+    images: p.images?.map((img: any) => ({
       id: img.id, src: img.src, alt: img.alt,
     })),
-    acf:               extractACF(p.meta_data),
+    acf: extractACF(p.meta_data),
   };
 }
 
@@ -118,21 +112,19 @@ function extractACF(metaData: any[]) {
   return result;
 }
 
-// ─── Shortcuts ───────────────────────────────────────────────
 export const getTrendingProducts   = () => getProducts({ filter: 'trending'    });
 export const getFeaturedProducts   = () => getProducts({ filter: 'featured'    });
 export const getTopSellingProducts = () => getProducts({ filter: 'top_selling' });
 export const getNewArrivals        = () => getProducts({ filter: 'new_arrival' });
 export const getSaleProducts       = () => getProducts({ filter: 'on_sale'     });
 
-// ─── Categories ──────────────────────────────────────────────
 export async function getCategories() {
   if (isServer && WC_API) {
     const res = await fetch(
       `${WC_API}/products/categories?per_page=100&orderby=count&order=desc`,
       {
         headers: { 'Authorization': getWCAuth() },
-        cache: 'no-store',
+        next: { revalidate: 3600 }, // categories: refresh every 1 hour
       }
     );
     if (!res.ok) return { all: [], top_level: [], children: [] };
@@ -140,10 +132,12 @@ export async function getCategories() {
     const cleaned = raw
       .filter((c: any) => c.count > 0)
       .map((c: any) => ({
-        id:    c.id,  name:  c.name,
-        slug:  c.slug, count: c.count,
+        id:     c.id,
+        name:   c.name,
+        slug:   c.slug,
+        count:  c.count,
         parent: c.parent,
-        image: c.image ? { src: c.image.src, alt: c.image.alt } : null,
+        image:  c.image ? { src: c.image.src, alt: c.image.alt } : null,
       }));
     return {
       all:       cleaned,
@@ -151,16 +145,19 @@ export async function getCategories() {
       children:  cleaned.filter((c: any) => c.parent !== 0),
     };
   }
-  const res = await fetch(`${SITE_URL}/api/categories`, { cache: 'no-store' });
+  const res = await fetch(`${SITE_URL}/api/categories`, {
+    next: { revalidate: 3600 },
+  });
   return res.json();
 }
 
-// ─── Deals ───────────────────────────────────────────────────
 export async function getDeals() {
   if (isServer && WP_API) {
     const res = await fetch(
       `${WP_API}/deal?acf_format=standard&orderby=menu_order&order=asc&per_page=7`,
-      { cache: 'no-store' }
+      {
+        next: { revalidate: 300 }, // deals: refresh every 5 minutes
+      }
     );
     if (!res.ok) return [];
     const raw = await res.json();
@@ -174,18 +171,19 @@ export async function getDeals() {
         acf:   d.acf,
       }));
   }
-  const res = await fetch(`${SITE_URL}/api/deals`, { cache: 'no-store' });
+  const res = await fetch(`${SITE_URL}/api/deals`, {
+    next: { revalidate: 300 },
+  });
   return res.json();
 }
 
-// ─── Coupons ─────────────────────────────────────────────────
 export async function getCoupons() {
   if (isServer && WC_API) {
     const res = await fetch(
       `${WC_API}/coupons?per_page=20`,
       {
         headers: { 'Authorization': getWCAuth() },
-        cache: 'no-store',
+        next: { revalidate: 600 }, // coupons: refresh every 10 minutes
       }
     );
     if (!res.ok) return [];
@@ -201,22 +199,23 @@ export async function getCoupons() {
       minimum_amount: c.minimum_amount,
     }));
   }
-  const res = await fetch(`${SITE_URL}/api/coupons`, { cache: 'no-store' });
+  const res = await fetch(`${SITE_URL}/api/coupons`, {
+    next: { revalidate: 600 },
+  });
   return res.json();
 }
 
-// ─── Single product ──────────────────────────────────────────
 export async function getProduct(id: number) {
   if (isServer && WC_API) {
     const res = await fetch(`${WC_API}/products/${id}`, {
       headers: { 'Authorization': getWCAuth() },
-      cache: 'no-store',
+      next: { revalidate: 60 }, // single product: refresh every 60 seconds
     });
     if (!res.ok) return null;
     return shapeProduct(await res.json());
   }
   const res = await fetch(`${SITE_URL}/api/products/${id}`, {
-    cache: 'no-store',
+    next: { revalidate: 60 },
   });
   return res.json();
 }
