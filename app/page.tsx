@@ -44,7 +44,7 @@ export default async function HomePage() {
         fontWeight: 'bold',
         marginBottom: '2rem',
       }}>
-        Kya Chal rha hai, Khana Khaya!! Haha
+        Kya Chal rha hai, Khana Khaya!! Ha-ha
       </div>
 
       <section style={{ marginBottom: '2rem' }}>
