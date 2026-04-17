@@ -20,7 +20,36 @@ export default async function HomePage() {
 
   return (
     <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-      <h1>shopbingepoint.in — API Test</h1>
+
+      <h1 style={{ margin: 0 }}>shopbingepoint.in — API Test</h1>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',        // Vertical center
+        justifyContent: 'center',    // Horizontal center [1, 4]
+        marginBottom: '1rem',
+        width: '100%'                // Ensure container fills width
+      }}>
+        <span style={{
+          fontSize: '2rem',          // Increase size
+          fontWeight: 'bold'         // Bold text
+        }}>
+          Han Ankit..
+        </span>
+      </div>
+            <div style={{
+        display: 'flex',
+        alignItems: 'center',        // Vertical center
+        justifyContent: 'center',    // Horizontal center [1, 4]
+        marginBottom: '1rem',
+        width: '100%'                // Ensure container fills width
+      }}>
+        <span style={{
+          fontSize: '1rem',          // Increase size
+          fontWeight: 'bold'         // Bold text
+        }}>
+          Kya Chal rha hai, Khana Khaya!! Haha
+        </span>
+      </div>
 
       {/* Categories */}
       <section style={{ marginBottom: '2rem' }}>
@@ -67,7 +96,7 @@ export default async function HomePage() {
           }}>
             <strong>{p.title}</strong>
             <p>
-              Price: ₹{p.sale_price || p.price} 
+              Price: ₹{p.sale_price || p.price}
               {p.on_sale && <span style={{ color: 'red' }}> (ON SALE)</span>}
             </p>
             <p>Categories: {p.categories?.map((c: any) => c.name).join(', ')}</p>
