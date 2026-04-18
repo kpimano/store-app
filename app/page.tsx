@@ -7,7 +7,10 @@ import {
   getFeaturedProducts,
 } from '@/lib/wordpress';
 
-export const revalidate = 86400;
+// 60 second safety net
+// webhook handles instant updates
+// if node restarts, max 60s until fresh data
+export const revalidate = 60;
 
 export default async function HomePage() {
   const [products, deals, coupons, categories, trending, featured] =
